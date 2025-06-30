@@ -1,0 +1,68 @@
+#Cargamos los datos
+transactions = LOAD '/uhadoop2025/projects/grupo18/fraud_data_clean.csv'
+  USING PigStorage(',') 
+  AS (
+    transaction_id:chararray,
+    customer_id:chararray,
+    card_number:chararray,
+    timestamp:chararray,
+    merchant_category:chararray,
+    merchant_type:chararray,
+    merchant:chararray,
+    amount:double,
+    currency:chararray,
+    country:chararray,
+    city:chararray,
+    city_size:chararray,
+    card_type:chararray,
+    card_present:chararray,
+    device:chararray,
+    channel:chararray,
+    device_fingerprint:chararray,
+    ip_address:chararray,
+    distance_from_home:chararray,
+    high_risk_merchant:chararray,
+    transaction_hour:int,
+    weekend_transaction:chararray,
+    is_fraud:chararray
+  );
+
+#filtramos por transacciones fraudulentas
+fraud = FILTER transactions BY is_fraud == 'True';
+
+### cual es la combinacion con mas fraudes?
+
+fraud = FILTER transactions BY is_fraud == 'True';
+
+grp = GROUP fraud BY (country, merchant_category, channel, card_type);
+
+fraude_por_comb = FOREACH grp GENERATE
+    group.country AS pais,
+    group.merchant_category AS categoria,
+    group.channel AS canal,
+    group.card_type AS tipo_tarjeta,
+    COUNT(fraud) AS total_fraudes;
+
+tx_grp = GROUP transactions BY (country, merchant_category, channel, card_type);
+
+tx_por_comb = FOREACH tx_grp GENERATE
+    group.country AS pais,
+    group.merchant_category AS categoria,
+    group.channel AS canal,
+    group.card_type AS tipo_tarjeta,
+    COUNT(transactions) AS total_tx;
+join_comb = JOIN fraude_por_comb BY (pais, categoria, canal, tipo_tarjeta),
+                  tx_por_comb BY (pais, categoria, canal, tipo_tarjeta);
+tasa_comb = FOREACH join_comb GENERATE
+    fraude_por_comb::pais AS pais,
+    fraude_por_comb::categoria AS categoria,
+    fraude_por_comb::canal AS canal,
+    fraude_por_comb::tipo_tarjeta AS tipo_tarjeta,
+    total_fraudes,
+    total_tx,
+    (double)total_fraudes / total_tx AS tasa_fraude;
+    
+ordenado = ORDER tasa_comb BY tasa_fraude DESC;
+DUMP ordenado;
+
+#################################

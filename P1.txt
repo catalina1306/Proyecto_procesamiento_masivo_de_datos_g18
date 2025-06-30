@@ -1,0 +1,251 @@
+#Cargamos los datos
+transactions = LOAD '/uhadoop2025/projects/grupo18/fraud_data_clean.csv'
+  USING PigStorage(',') 
+  AS (
+    transaction_id:chararray,
+    customer_id:chararray,
+    card_number:chararray,
+    timestamp:chararray,
+    merchant_category:chararray,
+    merchant_type:chararray,
+    merchant:chararray,
+    amount:double,
+    currency:chararray,
+    country:chararray,
+    city:chararray,
+    city_size:chararray,
+    card_type:chararray,
+    card_present:chararray,
+    device:chararray,
+    channel:chararray,
+    device_fingerprint:chararray,
+    ip_address:chararray,
+    distance_from_home:chararray,
+    high_risk_merchant:chararray,
+    transaction_hour:int,
+    weekend_transaction:chararray,
+    is_fraud:chararray
+  );
+
+#filtramos por transacciones fraudulentas
+fraud = FILTER transactions BY is_fraud == 'True';
+
+#Fueron considerados como caracteristicas importantes (y su columna) para el fraude el rubro (merchant), la hora (timestamp), el pais (country) y el canal (channel)
+
+
+#### consultas exploratorias ####
+
+# Cuantas transacciones hay?
+total = FOREACH (GROUP transactions ALL) GENERATE COUNT(transactions) AS total_transacciones;
+
+> 7.483.767
+
+# Cuántas son fraudulentas?
+
+fraud = FILTER transactions BY is_fraud == 'True';
+total_fraudes = FOREACH (GROUP fraud ALL) GENERATE COUNT(fraud) AS total_fraudes;
+
+> 1.494.719
+
+# Transacciones por país
+
+por_pais = GROUP transactions BY country;
+transacciones_por_pais = FOREACH por_pais GENERATE group AS pais, COUNT(transactions) AS total;
+
+>  (USA,500060)
+>  (France,541287)
+>  (Mexico,785704)
+>  (Russia,793730)
+>  (Germany,524464)
+>  (Nigeria,849840)
+>  (UK,538493)
+>  (Japan,527393)
+>  (Brazil,804800)
+>  (Canada,532632)
+>  (Australia,496695)
+>  (Singapore,588668)
+
+# Fraudes por país
+
+fraudes_por_pais = GROUP fraud BY country;
+total_fraudes_pais = FOREACH fraudes_por_pais GENERATE group AS pais, COUNT(fraud) AS total_fraudes;
+
+>  (USA,37312)
+>  (France,37426)
+>  (Mexico,298841)
+>  (Russia,299425)
+>  (Germany,37205)
+>  (Nigeria,298600)
+>  (UK,37345)
+>  (Japan,37592)
+>  (Brazil,298629)
+>  (Canada,37278)
+>  (Australia,37652)
+>  (Singapore,37414)
+
+# Fraudes por pais normalizado
+
+joined = JOIN transacciones_por_pais BY pais, total_fraudes_pais BY pais;
+tasa = FOREACH joined GENERATE transacciones_por_pais::pais AS pais,
+                    total AS total_tx,
+                    total_fraudes AS total_fraudes,
+                    (double)total_fraudes / total AS tasa_fraude;
+
+>  (UK,538493,37345,0.06935094792318564)
+>  (USA,500060,37312,0.07461504619445666)
+>  (Japan,527393,37592,0.07127891344784629)
+>  (Brazil,804800,298629,0.3710598906560636)
+>  (Canada,532632,37278,0.06998828459424143)
+>  (France,541287,37426,0.06914261750236012)
+>  (Mexico,785704,298841,0.3803480700110983)
+>  (Russia,793730,299425,0.3772378516624041)
+>  (Germany,524464,37205,0.07093909210165045)
+>  (Nigeria,849840,298600,0.3513602560481973)
+>  (Australia,496695,37652,0.07580507152276549)
+>  (Singapore,588668,37414,0.06355704743590615)
+
+### consulta sobre el rubro
+
+#caso con todas las transacciones
+merchant_counts = GROUP transactions BY merchant_category;
+merchant_frequency = FOREACH merchant_counts GENERATE
+    group AS name,
+    COUNT(transactions) AS num_transactions;
+sorted_merchants = ORDER merchant_frequency BY num_transactions DESC;
+top_10_merchants = LIMIT sorted_merchants 10;
+DUMP top_10_merchants;
+
+#este es el subtipo que hise sin querer
+>(Chegg,156105)
+>(Highway Gas Stop,155980)
+>(Local Gas Station,155977)
+>(Truck Stop,155945)
+>(University Bookstore,155827)
+>(Barnes & Noble,154833)
+>(CVS Pharmacy,117377)
+>(Rite Aid,117242)
+>(Medical Center,117149)
+>(Urgent Care,117139)
+
+>(Healthcare,936770)
+>(Restaurant,936178)
+>(Entertainment,936173)
+>(Retail,935883)
+>(Travel,935790)
+>(Gas,935401)
+>(Grocery,934029)
+>(Education,933542)
+>(merchant_category,1)
+
+#caso con solo las transacciones fraudulentas
+
+merchant_counts = GROUP fraud BY merchant_category;
+merchant_frequency = FOREACH merchant_counts GENERATE
+    group AS name,
+    COUNT(fraud) AS num_transactions;
+sorted_merchants = ORDER merchant_frequency BY num_transactions DESC;
+top_10_merchants = LIMIT sorted_merchants 10;
+DUMP top_10_merchants;
+
+>(Travel,187477)
+>(Grocery,186987)
+>(Restaurant,186951)
+>(Entertainment,186890)
+>(Gas,186829)
+>(Healthcare,186769)
+>(Retail,186613)
+>(Education,186203)
+
+### consulta sobre el canal
+#aunque limito 10 deberian ser 3 nomas
+
+channel_counts = GROUP transactions BY channel;
+channel_frequency = FOREACH channel_counts GENERATE
+    group AS name,
+    COUNT(transactions) AS num_transactions;
+sorted_channel = ORDER channel_frequency BY num_transactions DESC;
+top_10_channel = LIMIT sorted_channel 10;
+DUMP top_10_channel;
+
+>(web,4563141)
+>(mobile,2269578)
+>(pos,651047)
+
+#solo las fraudulentas
+
+channel_counts = GROUP fraud BY channel;
+channel_frequency = FOREACH channel_counts GENERATE
+    group AS name,
+    COUNT(fraud) AS num_transactions;
+sorted_channel = ORDER channel_frequency BY num_transactions DESC;
+top_10_channel = LIMIT sorted_channel 10;
+DUMP top_10_channel;
+
+>(pos,651047)
+>(web,562522)
+>(mobile,281150)
+
+
+#Analisis de horarios
+
+grouped_by_hour = GROUP frauds BY transaction_hour;
+fraud_by_hour = FOREACH grouped_by_hour GENERATE group AS hour, COUNT(frauds) AS total_frauds;
+sorted_fraud_by_hour = ORDER fraud_by_hour BY hour;
+DUMP sorted_fraud_by_hour;
+
+>(0,74)
+>(1,345)
+>(2,332)
+>(3,341)
+>(4,336)
+>(5,92)
+>(6,88)
+>(7,78)
+>(8,95)
+>(9,90)
+>(10,82)
+>(11,82)
+>(12,101)
+>(13,72)
+>(14,87)
+>(15,83)
+>(16,65)
+>(17,69)
+>(18,75)
+>(19,80)
+>(20,95)
+>(21,89)
+>(22,84)
+>(23,92)
+
+#Todas las transacciones 
+
+grouped_by_hour = GROUP transactions BY transaction_hour;
+fraud_by_hour = FOREACH grouped_by_hour GENERATE group AS hour, COUNT(transactions) AS total_frauds;
+sorted_fraud_by_hour = ORDER fraud_by_hour BY hour;
+DUMP sorted_fraud_by_hour;
+
+>(0,155759)
+>(1,280136)
+>(2,280472)
+>(3,280031)
+>(4,281466)
+>(5,208529)
+>(6,196875)
+>(7,301176)
+>(8,405312)
+>(9,352451)
+>(10,300516)
+>(11,352499)
+>(12,404942)
+>(13,352556)
+>(14,300152)
+>(15,300554)
+>(16,352379)
+>(17,404657)
+>(18,456393)
+>(19,404823)
+>(20,300832)
+>(21,196566)
+>(22,332961)
+>(23,281729)

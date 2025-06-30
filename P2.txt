@@ -1,0 +1,217 @@
+#Cargamos los datos
+transactions = LOAD '/uhadoop2025/projects/grupo18/fraud_data_clean.csv'
+  USING PigStorage(',') 
+  AS (
+    transaction_id:chararray,
+    customer_id:chararray,
+    card_number:chararray,
+    timestamp:chararray,
+    merchant_category:chararray,
+    merchant_type:chararray,
+    merchant:chararray,
+    amount:double,
+    currency:chararray,
+    country:chararray,
+    city:chararray,
+    city_size:chararray,
+    card_type:chararray,
+    card_present:chararray,
+    device:chararray,
+    channel:chararray,
+    device_fingerprint:chararray,
+    ip_address:chararray,
+    distance_from_home:chararray,
+    high_risk_merchant:chararray,
+    transaction_hour:int,
+    weekend_transaction:chararray,
+    is_fraud:chararray
+  );
+
+#filtramos por transacciones fraudulentas
+fraud = FILTER transactions BY is_fraud == 'True';
+
+
+-- Clasificamos tecnologías nuevas y tradicionales
+with_tech_type = FOREACH frauds GENERATE
+    transaction_id,
+    channel,
+    device,
+    (channel == 'pos' ? 'tradicional' : 'nueva') AS tecnologia;
+
+-- Agrupamos por tecnología y dispositivo para comparar
+grouped = GROUP with_tech_type BY (tecnologia, device);
+
+results = FOREACH grouped GENERATE
+    FLATTEN(group),
+    COUNT(with_tech_type) AS total_fraudes;
+
+sorted = ORDER results BY total_fraudes DESC;
+
+DUMP sorted;
+>(tradicional,Chip Reader,217324)
+>(tradicional,Magnetic Stripe,217204)
+>(tradicional,NFC Payment,216519)
+>(nueva,Firefox,142171)
+>(nueva,Safari,141379)
+>(nueva,Android App,140844)
+>(nueva,iOS App,140306)
+>(nueva,Chrome,140087)
+>(nueva,Edge,138885)
+=> Tradicional = 651.047,  nueva = 853.672
+
+#consulta sobre el porcentaje de fraudes segun el tipo de tarjeta y la tecnologia utilizada
+
+processed_frauds = FOREACH fraud GENERATE card_type, device;
+grouped_fraud_stats = GROUP processed_frauds BY (card_type, device);
+describe grouped_fraud_stats;
+fraud_stats = FOREACH grouped_fraud_stats GENERATE group.card_type, group.device, COUNT(processed_frauds) AS num_fraudulent_transactions;
+
+
+>(Basic Debit,Edge,27882)
+>(Basic Debit,Chrome,28744)
+>(Basic Debit,Android App,28759)
+>(Basic Debit,Chip Reader,45302)
+>(Gold Credit,Edge,26902)
+>(Gold Credit,Chrome,26819)
+>(Gold Credit,Android App,28159)
+>(Gold Credit,Chip Reader,41204)
+>(Basic Credit,Safari,27831)
+>(Basic Credit,iOS App,26546)
+>(Premium Debit,Chrome,29972)
+>(Premium Debit,Firefox,29231)
+>(Premium Debit,NFC Payment,44445)
+>(Platinum Credit,Firefox,29584)
+>(Platinum Credit,NFC Payment,44230)
+>(Basic Debit,Safari,29650)
+>(Basic Debit,iOS App,29071)
+>(Basic Debit,Magnetic Stripe,45285)
+>(Gold Credit,Safari,27519)
+>(Gold Credit,Magnetic Stripe,41968)
+>(Basic Credit,Edge,25646)
+>(Basic Credit,Chrome,26460)
+>(Basic Credit,Firefox,26646)
+>(Basic Credit,NFC Payment,41090)
+>(Premium Debit,Edge,28818)
+>(Premium Debit,Android App,28931)
+>(Premium Debit,Chip Reader,44630)
+>(Premium Debit,Magnetic Stripe,44397)
+>(Platinum Credit,Edge,29637)
+>(Platinum Credit,Chrome,28092)
+>(Platinum Credit,Android App,29105)
+>(Platinum Credit,Chip Reader,44877)
+>(Basic Debit,Firefox,29608)
+>(Basic Debit,NFC Payment,44938)
+>(Gold Credit,Firefox,27102)
+>(Gold Credit,iOS App,27571)
+>(Gold Credit,NFC Payment,41816)
+>(Basic Credit,Android App,25890)
+>(Basic Credit,Chip Reader,41311)
+>(Basic Credit,Magnetic Stripe,41308)
+>(Premium Debit,Safari,28362)
+>(Premium Debit,iOS App,28716)
+>(Platinum Credit,Safari,28017)
+>(Platinum Credit,iOS App,28402)
+>(Platinum Credit,Magnetic Stripe,44246)
+
+processed_frauds = FOREACH fraud GENERATE card_type, device;
+grouped_fraud_stats = GROUP processed_frauds BY (card_type,  device);
+describe grouped_fraud_stats;
+fraud_stats = FOREACH grouped_fraud_stats GENERATE group.card_type, group.device, COUNT(processed_frauds) AS num_fraudulent_transactions;
+
+processed_frauds2 = FOREACH transactions GENERATE card_type, device;
+grouped_fraud_stats2 = GROUP processed_frauds2 BY (card_type, device);
+fraud_stats2 = FOREACH grouped_fraud_stats2 GENERATE group.card_type, group.device, COUNT(processed_frauds2) AS num_fraudulent_transactions;
+
+final_stat = JOIN fraud_stats BY (card_type, device), 
+                    fraud_stats2 BY (card_type, device);
+
+final_stats2 = FOREACH final_stat GENERATE 
+                fraud_stats::card_type AS card_type, 
+                fraud_stats::device AS device,
+                fraud_stats::num_fraudulent_transactions as counted,
+                (fraud_stats::num_fraudulent_transactions * 1.0 ) / fraud_stats2::num_fraudulent_transactions AS fraud_percentage;
+final_stats2 = ORDER final_stats2 BY fraud_percentage DESC;
+DUMP final_stats2;
+
+
+>(Gold Credit,Chip Reader,41204,1.0)
+>(Platinum Credit,NFC Payment,44230,1.0)
+>(Platinum Credit,Chip Reader,44877,1.0)
+>(Premium Debit,Magnetic Stripe,44397,1.0)
+>(Premium Debit,NFC Payment,44445,1.0)
+>(Premium Debit,Chip Reader,44630,1.0)
+>(Basic Debit,Chip Reader,45302,1.0)
+>(Basic Debit,NFC Payment,44938,1.0)
+>(Basic Debit,Magnetic Stripe,45285,1.0)
+>(Basic Credit,Magnetic Stripe,41308,1.0)
+>(Basic Credit,NFC Payment,41090,1.0)
+>(Basic Credit,Chip Reader,41311,1.0)
+>(Platinum Credit,Magnetic Stripe,44246,1.0)
+>(Gold Credit,Magnetic Stripe,41968,1.0)
+>(Gold Credit,NFC Payment,41816,1.0)
+>(Basic Credit,Safari,27831,0.1440736752738492)
+>(Premium Debit,Chrome,29972,0.13806382665094338)
+>(Basic Debit,Safari,29650,0.13486958815876857)
+>(Gold Credit,Android App,28159,0.13477332771757858)
+>(Gold Credit,iOS App,27571,0.1336069665001284)
+>(Platinum Credit,Edge,29637,0.13348556912766188)
+>(Platinum Credit,Android App,29105,0.1311774647887324)
+>(Platinum Credit,Firefox,29584,0.13051572770988662)
+>(Basic Credit,Chrome,26460,0.12803143205527706)
+>(Premium Debit,Firefox,29231,0.12782993908278706)
+>(Basic Credit,Firefox,26646,0.12753797995462507)
+>(Basic Debit,Firefox,29608,0.12737636860332552)
+>(Basic Debit,Chrome,28744,0.1258080752817595)
+>(Gold Credit,Safari,27519,0.1258057437529144)
+>(Basic Debit,Android App,28759,0.12415653938308115)
+>(Basic Credit,iOS App,26546,0.12316271991685844)
+>(Premium Debit,Android App,28931,0.12221199013213477)
+>(Basic Debit,iOS App,29071,0.12176692091495876)
+>(Gold Credit,Firefox,27102,0.12086157688191224)
+>(Premium Debit,Edge,28818,0.12050681609099273)
+>(Gold Credit,Edge,26902,0.11893908914463068)
+>(Premium Debit,iOS App,28716,0.11848783184927833)
+>(Platinum Credit,iOS App,28402,0.1181108583642798)
+>(Premium Debit,Safari,28362,0.11709770114942529)
+>(Platinum Credit,Chrome,28092,0.11591930379093922)
+>(Basic Credit,Android App,25890,0.11408150945391574)
+>(Platinum Credit,Safari,28017,0.11376029819596314)
+>(Gold Credit,Chrome,26819,0.11277395589793618)
+>(Basic Credit,Edge,25646,0.10662952414610315)
+>(Basic Debit,Edge,27882,0.10654265603863997)
+
+
+processed_frauds = FOREACH fraud GENERATE card_type, device;
+grouped_fraud_stats = GROUP processed_frauds BY (card_type,  device);
+describe grouped_fraud_stats;
+fraud_stats = FOREACH grouped_fraud_stats GENERATE group.card_type, group.device, COUNT(processed_frauds) AS num_fraudulent_transactions;
+
+processed_frauds2 = FOREACH transactions GENERATE card_type, device;
+grouped_fraud_stats2 = GROUP processed_frauds2 BY (card_type, device);
+fraud_stats2 = FOREACH grouped_fraud_stats2 GENERATE group.card_type, group.device, COUNT(processed_frauds2) AS num_fraudulent_transactions;
+
+final_stat = JOIN fraud_stats BY (card_type, device), 
+                    fraud_stats2 BY (card_type, device);
+
+final_stats2 = FOREACH final_stat GENERATE 
+                fraud_stats::card_type AS card_type, 
+                fraud_stats::device AS device,
+                fraud_stats::num_fraudulent_transactions as counted,
+                (fraud_stats::num_fraudulent_transactions * 1.0 ) / fraud_stats2::num_fraudulent_transactions AS fraud_percentage;
+final_stats2 = ORDER final_stats2 BY fraud_percentage DESC;
+final_stats2 = FILTER final_stats2 BY card_type == 'Basic Debit';
+DUMP final_stats2;
+
+
+>(Basic Debit,Magnetic Stripe,45285,1.0)
+>(Basic Debit,NFC Payment,44938,1.0)
+>(Basic Debit,Chip Reader,45302,1.0)
+>(Basic Debit,Safari,29650,0.13486958815876857)
+>(Basic Debit,Firefox,29608,0.12737636860332552)
+>(Basic Debit,Chrome,28744,0.1258080752817595)
+>(Basic Debit,Android App,28759,0.12415653938308115)
+>(Basic Debit,iOS App,29071,0.12176692091495876)
+>(Basic Debit,Edge,27882,0.10654265603863997)
+
+
+
